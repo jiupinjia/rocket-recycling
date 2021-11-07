@@ -6,7 +6,8 @@ import utils
 
 class Rocket(object):
 
-    def __init__(self, max_steps, task='hover', rocket_type='falcon', viewport_h=768):
+    def __init__(self, max_steps, task='hover', rocket_type='falcon',
+                 viewport_h=768, path_to_bg_img=None):
 
         self.task = task
         self.rocket_type = rocket_type
@@ -42,7 +43,9 @@ class Rocket(object):
         self.state_dims = 7
         self.action_dims = len(self.action_table)
 
-        self.bg_img = utils.load_bg_img(path_to_img=task+'.jpg', w=self.viewport_w, h=self.viewport_h)
+        if path_to_bg_img is None:
+            path_to_bg_img = task+'.jpg'
+        self.bg_img = utils.load_bg_img(path_to_bg_img, w=self.viewport_w, h=self.viewport_h)
 
         self.state_buffer = []
 
@@ -230,7 +233,7 @@ class Rocket(object):
 
 
     def render(self, window_name='env', wait_time=1,
-               with_trajectory=True, with_camera_tracking=True):
+               with_trajectory=True, with_camera_tracking=True, crop_scale=0.4):
 
         canvas = np.copy(self.bg_img)
         polys = self.create_polygons()
@@ -249,8 +252,8 @@ class Rocket(object):
         frame_1 = canvas.copy()
 
         if with_camera_tracking:
-            frame_0 = self.crop_alongwith_camera(frame_0)
-            frame_1 = self.crop_alongwith_camera(frame_1)
+            frame_0 = self.crop_alongwith_camera(frame_0, crop_scale=crop_scale)
+            frame_1 = self.crop_alongwith_camera(frame_1, crop_scale=crop_scale)
 
         # draw trajectory
         if with_trajectory:
@@ -265,6 +268,7 @@ class Rocket(object):
         cv2.waitKey(wait_time)
         cv2.imshow(window_name, frame_1[:,:,::-1])
         cv2.waitKey(wait_time)
+        return frame_0, frame_1
 
     def create_polygons(self):
 
@@ -529,10 +533,10 @@ class Rocket(object):
 
 
 
-    def crop_alongwith_camera(self, vis):
+    def crop_alongwith_camera(self, vis, crop_scale=0.4):
         x, y = self.state['x'], self.state['y']
         xp, yp = self.wd2pxl([[x, y]])[0]
-        crop_w_half, crop_h_half = int(self.viewport_w*0.4), int(self.viewport_h*0.4)
+        crop_w_half, crop_h_half = int(self.viewport_w*crop_scale), int(self.viewport_h*crop_scale)
         # check boundary
         if xp <= crop_w_half + 1:
             xp = crop_w_half + 1
