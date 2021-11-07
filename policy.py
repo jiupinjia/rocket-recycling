@@ -52,6 +52,9 @@ class PositionalMapping(nn.Module):
 
 
 class MLP(nn.Module):
+    """
+    Multilayer perception with an embedded positional mapping
+    """
 
     def __init__(self, input_dim, output_dim):
         super().__init__()
@@ -75,6 +78,9 @@ class MLP(nn.Module):
 
 
 class ActorCritic(nn.Module):
+    """
+    RL policy and update rules
+    """
 
     def __init__(self, input_dim, output_dim):
         super().__init__()

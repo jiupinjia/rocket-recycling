@@ -5,6 +5,27 @@ import utils
 
 
 class Rocket(object):
+    """
+    Rocekt and environment.
+    The rocket is simplified into a rigid body model with a thin rod,
+    considering acceleration and angular acceleration and air resistance
+    proportional to velocity.
+
+    There are two tasks: hover and landing
+    Their reward functions are straight forward and simple.
+
+    For the hover tasks: the step-reward is given based on two factors
+    1) the distance between the rocket and the predefined target point
+    2) the angle of the rocket body (the rocket should stay as upright as possible)
+
+    For the landing task: the step-reward is given based on three factors:
+    1) the distance between the rocket and the predefined landing point.
+    2) the angle of the rocket body (the rocket should stay as upright as possible)
+    3) Speed and angle at the moment of contact with the ground, when the touching-speed
+    are smaller than a safe threshold and the angle is close to 90 degrees (upright),
+    we see it as a successful landing.
+
+    """
 
     def __init__(self, max_steps, task='hover', rocket_type='falcon',
                  viewport_h=768, path_to_bg_img=None):
@@ -13,11 +34,11 @@ class Rocket(object):
         self.rocket_type = rocket_type
 
         self.g = 9.8
-        self.H = 24
+        self.H = 24  # rocket height (meters)
         self.I = 1/12*self.H*self.H  # Moment of inertia
         self.dt = 0.05
 
-        self.world_x_min = -100
+        self.world_x_min = -100  # meters
         self.world_x_max = 100
         self.world_y_min = -10
         self.world_y_max = 190
@@ -32,6 +53,7 @@ class Rocket(object):
         self.already_crash = False
         self.max_steps = max_steps
 
+        # viewport height x width (pixels)
         self.viewport_h = int(viewport_h)
         self.viewport_w = int(viewport_h * (self.world_x_max-self.world_x_min) \
                           / (self.world_y_max - self.world_y_min))
@@ -65,17 +87,17 @@ class Rocket(object):
 
     def create_action_table(self):
         f = 1.5*self.g
-        f_m = 0.5*self.g
+        f_ = 0.5*self.g
         c, s = np.cos(15/180*np.pi), np.sin(15/180*np.pi)
         middle = [0, f]  # main engine
-        bottom_left = [s*f, c*f]  # left engine push 15 dgree down to the left
-        bottom_right = [-s*f, c*f]  # right engine push 15 dgree down to the right
-        bottom_left_mini = [s*f_m, c*f_m]
-        bottom_right_mini = [-s*f_m, c*f_m]
+        bottom_left = [s*f, c*f]  # left engine pushes 15 degree down to the left
+        bottom_right = [-s*f, c*f]  # right engine pushes 15 degree down to the right
+        bottom_left_ = [s*f_, c*f_]
+        bottom_right_ = [-s*f_, c*f_]
         action_table = [[0,  0],
                         middle,
                         bottom_left, bottom_right,
-                        bottom_left_mini, bottom_right_mini
+                        bottom_left_, bottom_right_
                         ]
         return action_table
 
@@ -104,7 +126,6 @@ class Rocket(object):
         }
 
         return state
-
 
     def check_crash(self, state):
         if self.task == 'hover':
@@ -145,7 +166,6 @@ class Rocket(object):
             return True if y <= 0 + self.H / 2.0 and v < 10.0 and abs(x) < self.target_r \
                            and abs(theta) < 10/180*np.pi else False
 
-
     def calculate_reward(self, state):
 
         x_range = self.world_x_max - self.world_x_min
@@ -180,8 +200,6 @@ class Rocket(object):
             reward = (1.0-v/100.)*(self.max_steps - self.step_id)
 
         return reward
-
-
 
     def step(self, action):
 
@@ -225,15 +243,14 @@ class Rocket(object):
 
         return self.flatten(self.state), reward, done, None
 
-
     def flatten(self, state):
         x = [state['x'], state['y'], state['vx'], state['vy'],
              state['theta'], state['vtheta'], state['t']]
         return np.array(x, dtype=np.float32)/100.
 
-
     def render(self, window_name='env', wait_time=1,
-               with_trajectory=True, with_camera_tracking=True, crop_scale=0.4):
+               with_trajectory=True, with_camera_tracking=True,
+               crop_scale=0.4):
 
         canvas = np.copy(self.bg_img)
         polys = self.create_polygons()
@@ -454,7 +471,6 @@ class Rocket(object):
             return pts_px.astype(int)
         else:
             return pts_px
-
 
     def draw_text(self, canvas, color=(255, 255, 0)):
 
