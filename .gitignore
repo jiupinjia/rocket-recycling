@@ -116,6 +116,8 @@ dmypy.json
 .idea
 *.pt
 *.png
+*.mp4
+demo*
 rewards.jpg
 hover_ckpt
 landing_ckpt
