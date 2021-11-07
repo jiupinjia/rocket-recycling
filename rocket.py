@@ -1,19 +1,18 @@
 import numpy as np
 import random
 import cv2
-import copy
-import time
 import utils
-import matplotlib.pyplot as plt
+
 
 class Rocket(object):
 
-    def __init__(self, max_steps, task='hover', viewport_h=768):
+    def __init__(self, max_steps, task='hover', rocket_type='falcon', viewport_h=768):
 
         self.task = task
+        self.rocket_type = rocket_type
 
         self.g = 9.8
-        self.W, self.H = 3, 24
+        self.H = 24
         self.I = 1/12*self.H*self.H  # Moment of inertia
         self.dt = 0.05
 
@@ -48,9 +47,14 @@ class Rocket(object):
         self.state_buffer = []
 
 
-    def reset(self):
+    def reset(self, state_dict=None):
+
+        if state_dict is None:
+            self.state = self.create_random_state()
+        else:
+            self.state = state_dict
+
         self.state_buffer = []
-        self.state = self.create_random_state()
         self.step_id = 0
         self.already_landing = False
         cv2.destroyAllWindows()
@@ -266,22 +270,95 @@ class Rocket(object):
 
         polys = {'rocket': [], 'engine_work': [], 'target_region': []}
 
-        W, H = self.W, self.H
-        dl = W / 3
+        if self.rocket_type == 'falcon':
 
-        # rocket main body
-        pts = [[-W/2, H/2], [W/2, H/2], [W/2, -H/2], [-W/2, -H/2]]
-        polys['rocket'].append({'pts': pts, 'face_color': (242, 242, 242), 'edge_color': None})
-        # rocket paint
-        pts = utils.create_rectangle_poly(center=(0, -0.35*H), w=W, h=0.1*H)
-        polys['rocket'].append({'pts': pts, 'face_color': (42, 42, 42), 'edge_color': None})
-        pts = utils.create_rectangle_poly(center=(0, -0.46*H), w=W, h=0.02*H)
-        polys['rocket'].append({'pts': pts, 'face_color': (42, 42, 42), 'edge_color': None})
-        # rocket landing rack
-        pts = [[-W/2, -H/2], [-W/2-H/10, -H/2-H/20], [-W/2, -H/2+H/20]]
-        polys['rocket'].append({'pts': pts, 'face_color': None, 'edge_color': (0, 0, 0)})
-        pts = [[W/2, -H/2], [W/2+H/10, -H/2-H/20], [W/2, -H/2+H/20]]
-        polys['rocket'].append({'pts': pts, 'face_color': None, 'edge_color': (0, 0, 0)})
+            H, W = self.H, self.H/10
+            dl = self.H / 30
+
+            # rocket main body
+            pts = [[-W/2, H/2], [W/2, H/2], [W/2, -H/2], [-W/2, -H/2]]
+            polys['rocket'].append({'pts': pts, 'face_color': (242, 242, 242), 'edge_color': None})
+            # rocket paint
+            pts = utils.create_rectangle_poly(center=(0, -0.35*H), w=W, h=0.1*H)
+            polys['rocket'].append({'pts': pts, 'face_color': (42, 42, 42), 'edge_color': None})
+            pts = utils.create_rectangle_poly(center=(0, -0.46*H), w=W, h=0.02*H)
+            polys['rocket'].append({'pts': pts, 'face_color': (42, 42, 42), 'edge_color': None})
+            # rocket landing rack
+            pts = [[-W/2, -H/2], [-W/2-H/10, -H/2-H/20], [-W/2, -H/2+H/20]]
+            polys['rocket'].append({'pts': pts, 'face_color': None, 'edge_color': (0, 0, 0)})
+            pts = [[W/2, -H/2], [W/2+H/10, -H/2-H/20], [W/2, -H/2+H/20]]
+            polys['rocket'].append({'pts': pts, 'face_color': None, 'edge_color': (0, 0, 0)})
+
+        elif self.rocket_type == 'starship':
+
+            H, W = self.H, self.H / 2.6
+            dl = self.H / 30
+
+            # rocket main body (right half)
+            pts = np.array([[ 0.        ,  0.5006878 ],
+                           [ 0.03125   ,  0.49243465],
+                           [ 0.0625    ,  0.48143053],
+                           [ 0.11458334,  0.43878955],
+                           [ 0.15277778,  0.3933975 ],
+                           [ 0.2326389 ,  0.23796424],
+                           [ 0.2326389 , -0.49931225],
+                           [ 0.        , -0.49931225]], dtype=np.float32)
+            pts[:, 0] = pts[:, 0] * W
+            pts[:, 1] = pts[:, 1] * H
+            polys['rocket'].append({'pts': pts, 'face_color': (242, 242, 242), 'edge_color': None})
+
+            # rocket main body (left half)
+            pts = np.array([[-0.        ,  0.5006878 ],
+                           [-0.03125   ,  0.49243465],
+                           [-0.0625    ,  0.48143053],
+                           [-0.11458334,  0.43878955],
+                           [-0.15277778,  0.3933975 ],
+                           [-0.2326389 ,  0.23796424],
+                           [-0.2326389 , -0.49931225],
+                           [-0.        , -0.49931225]], dtype=np.float32)
+            pts[:, 0] = pts[:, 0] * W
+            pts[:, 1] = pts[:, 1] * H
+            polys['rocket'].append({'pts': pts, 'face_color': (212, 212, 232), 'edge_color': None})
+
+            # upper wing (right)
+            pts = np.array([[0.15972222, 0.3933975 ],
+                           [0.3784722 , 0.303989  ],
+                           [0.3784722 , 0.2352132 ],
+                           [0.22916667, 0.23658872]], dtype=np.float32)
+            pts[:, 0] = pts[:, 0] * W
+            pts[:, 1] = pts[:, 1] * H
+            polys['rocket'].append({'pts': pts, 'face_color': (42, 42, 42), 'edge_color': None})
+
+            # upper wing (left)
+            pts = np.array([[-0.15972222,  0.3933975 ],
+                           [-0.3784722 ,  0.303989  ],
+                           [-0.3784722 ,  0.2352132 ],
+                           [-0.22916667,  0.23658872]], dtype=np.float32)
+            pts[:, 0] = pts[:, 0] * W
+            pts[:, 1] = pts[:, 1] * H
+            polys['rocket'].append({'pts': pts, 'face_color': (42, 42, 42), 'edge_color': None})
+
+            # lower wing (right)
+            pts = np.array([[ 0.2326389 , -0.16368638],
+                           [ 0.4548611 , -0.33562586],
+                           [ 0.4548611 , -0.48555708],
+                           [ 0.2638889 , -0.48555708]], dtype=np.float32)
+            pts[:, 0] = pts[:, 0] * W
+            pts[:, 1] = pts[:, 1] * H
+            polys['rocket'].append({'pts': pts, 'face_color': (100, 100, 100), 'edge_color': None})
+
+            # lower wing (left)
+            pts = np.array([[-0.2326389 , -0.16368638],
+                           [-0.4548611 , -0.33562586],
+                           [-0.4548611 , -0.48555708],
+                           [-0.2638889 , -0.48555708]], dtype=np.float32)
+            pts[:, 0] = pts[:, 0] * W
+            pts[:, 1] = pts[:, 1] * H
+            polys['rocket'].append({'pts': pts, 'face_color': (100, 100, 100), 'edge_color': None})
+
+        else:
+            raise NotImplementedError('rocket type [%s] is not found, please choose one '
+                                      'from (falcon, starship)' % self.rocket_type)
 
         # engine work
         action = self.state['a_']
