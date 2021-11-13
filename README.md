@@ -10,7 +10,7 @@ I tried on two tasks: **hovering** and **landing**. The rocket is simplified int
 
 With the above basic settings, the action space is defined as a collection of the discrete control signals of the engine, including the thrust acceleration and the angular velocity of the nozzle. The state-space consists of the rocket position, speed, angle, angle velocity, nozzle angle, and the simulation time.
 
-![](./gallery/config.png)
+![](./gallery/config.jpg)
 
 
 
