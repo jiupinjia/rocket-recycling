@@ -118,6 +118,7 @@ dmypy.json
 *.png
 *.mp4
 demo*
+TTT*
 rewards.jpg
 hover_ckpt
 landing_ckpt
