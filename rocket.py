@@ -34,20 +34,20 @@ class Rocket(object):
         self.rocket_type = rocket_type
 
         self.g = 9.8
-        self.H = 24  # rocket height (meters)
+        self.H = 50  # rocket height (meters)
         self.I = 1/12*self.H*self.H  # Moment of inertia
         self.dt = 0.05
 
-        self.world_x_min = -100  # meters
-        self.world_x_max = 100
-        self.world_y_min = -10
-        self.world_y_max = 190
+        self.world_x_min = -300  # meters
+        self.world_x_max = 300
+        self.world_y_min = -30
+        self.world_y_max = 570
 
         # target point
         if self.task == 'hover':
-            self.target_x, self.target_y, self.target_r = 0, 80, 15
+            self.target_x, self.target_y, self.target_r = 0, 200, 50
         elif self.task == 'landing':
-            self.target_x, self.target_y, self.target_r = 0, self.H/2.0, 15
+            self.target_x, self.target_y, self.target_r = 0, self.H/2.0, 50
 
         self.already_landing = False
         self.already_crash = False
@@ -62,7 +62,7 @@ class Rocket(object):
         self.state = self.create_random_state()
         self.action_table = self.create_action_table()
 
-        self.state_dims = 7
+        self.state_dims = 8
         self.action_dims = len(self.action_table)
 
         if path_to_bg_img is None:
@@ -86,18 +86,16 @@ class Rocket(object):
         return self.flatten(self.state)
 
     def create_action_table(self):
-        f = 1.5*self.g
-        f_ = 0.5*self.g
-        c, s = np.cos(15/180*np.pi), np.sin(15/180*np.pi)
-        middle = [0, f]  # main engine
-        bottom_left = [s*f, c*f]  # left engine pushes 15 degree down to the left
-        bottom_right = [-s*f, c*f]  # right engine pushes 15 degree down to the right
-        bottom_left_ = [s*f_, c*f_]
-        bottom_right_ = [-s*f_, c*f_]
-        action_table = [[0,  0],
-                        middle,
-                        bottom_left, bottom_right,
-                        bottom_left_, bottom_right_
+        f0 = 0.2 * self.g  # thrust
+        f1 = 1.0 * self.g
+        f2 = 2 * self.g
+        vphi0 = 0  # Nozzle angular velocity
+        vphi1 = 30 / 180 * np.pi
+        vphi2 = -30 / 180 * np.pi
+
+        action_table = [[f0, vphi0], [f0, vphi1], [f0, vphi2],
+                        [f1, vphi0], [f1, vphi1], [f1, vphi2],
+                        [f2, vphi0], [f2, vphi1], [f2, vphi2]
                         ]
         return action_table
 
@@ -111,17 +109,26 @@ class Rocket(object):
         y_range = self.world_y_max - self.world_y_min
         xc = (self.world_x_max + self.world_x_min) / 2.0
         yc = (self.world_y_max + self.world_y_min) / 2.0
-        x = random.uniform(xc-x_range/3.0, xc+x_range/3.0)
-        y = yc + 0.4*y_range
 
-        if x <= 0:
-            theta = -80 / 180 * np.pi
-        else:
-            theta = 80 / 180 * np.pi
+        if self.task == 'landing':
+            x = random.uniform(xc - x_range / 4.0, xc + x_range / 4.0)
+            y = yc + 0.4*y_range
+            if x <= 0:
+                theta = -85 / 180 * np.pi
+            else:
+                theta = 85 / 180 * np.pi
+            vy = -50
+
+        if self.task == 'hover':
+            x = xc
+            y = yc + 0.2 * y_range
+            theta = random.uniform(-45, 45) / 180 * np.pi
+            vy = -10
 
         state = {
-            'x': x, 'y': y, 'vx': 0, 'vy': 0,
+            'x': x, 'y': y, 'vx': 0, 'vy': vy,
             'theta': theta, 'vtheta': 0,
+            'phi': 0, 'f': 0,
             't': 0, 'a_': 0
         }
 
@@ -130,7 +137,7 @@ class Rocket(object):
     def check_crash(self, state):
         if self.task == 'hover':
             x, y = state['x'], state['y']
-
+            theta = state['theta']
             crash = False
             if y <= self.H / 2.0:
                 crash = True
@@ -142,16 +149,19 @@ class Rocket(object):
             x, y = state['x'], state['y']
             vx, vy = state['vx'], state['vy']
             theta = state['theta']
+            vtheta = state['vtheta']
             v = (vx**2 + vy**2)**0.5
 
             crash = False
             if y >= self.world_y_max - self.H / 2.0:
                 crash = True
-            if y <= 0 + self.H / 2.0 and v >= 10.0:
+            if y <= 0 + self.H / 2.0 and v >= 15.0:
                 crash = True
             if y <= 0 + self.H / 2.0 and abs(x) >= self.target_r:
                 crash = True
             if y <= 0 + self.H / 2.0 and abs(theta) >= 10/180*np.pi:
+                crash = True
+            if y <= 0 + self.H / 2.0 and abs(vtheta) >= 10/180*np.pi:
                 crash = True
             return crash
 
@@ -162,9 +172,10 @@ class Rocket(object):
             x, y = state['x'], state['y']
             vx, vy = state['vx'], state['vy']
             theta = state['theta']
+            vtheta = state['vtheta']
             v = (vx**2 + vy**2)**0.5
-            return True if y <= 0 + self.H / 2.0 and v < 10.0 and abs(x) < self.target_r \
-                           and abs(theta) < 10/180*np.pi else False
+            return True if y <= 0 + self.H / 2.0 and v < 15.0 and abs(x) < self.target_r \
+                           and abs(theta) < 10/180*np.pi and abs(vtheta) < 10/180*np.pi else False
 
     def calculate_reward(self, state):
 
@@ -176,14 +187,12 @@ class Rocket(object):
         dist_y = abs(state['y'] - self.target_y)
         dist_norm = dist_x / x_range + dist_y / y_range
 
-        dist_norm = min(1, dist_norm)
         dist_reward = 0.1*(1.0 - dist_norm)
 
         if abs(state['theta']) <= np.pi / 6.0:
             pose_reward = 0.1
         else:
-            pose_reward = abs(state['theta']) / (2*np.pi)
-            pose_reward = min(1, pose_reward)
+            pose_reward = abs(state['theta']) / (0.5*np.pi)
             pose_reward = 0.1 * (1.0 - pose_reward)
 
         reward = dist_reward + pose_reward
@@ -192,12 +201,14 @@ class Rocket(object):
             reward = 0.25
         if self.task == 'hover' and (dist_x**2 + dist_y**2)**0.5 <= 1*self.target_r:  # hit target
             reward = 0.5
+        if self.task == 'hover' and abs(state['theta']) > 90 / 180 * np.pi:
+            reward = 0
 
         v = (state['vx'] ** 2 + state['vy'] ** 2) ** 0.5
         if self.task == 'landing' and self.already_crash:
-            reward = (2*reward-v/100.) * (self.max_steps - self.step_id)
+            reward = (reward + 5*np.exp(-1*v/10.)) * (self.max_steps - self.step_id)
         if self.task == 'landing' and self.already_landing:
-            reward = (1.0-v/100.)*(self.max_steps - self.step_id)
+            reward = (1.0 + 5*np.exp(-1*v/10.))*(self.max_steps - self.step_id)
 
         return reward
 
@@ -205,30 +216,40 @@ class Rocket(object):
 
         x, y, vx, vy = self.state['x'], self.state['y'], self.state['vx'], self.state['vy']
         theta, vtheta = self.state['theta'], self.state['vtheta']
+        phi = self.state['phi']
 
-        ft, fr = self.action_table[action]
+        f, vphi = self.action_table[action]
+
+        ft, fr = -f*np.sin(phi), f*np.cos(phi)
         fx = ft*np.cos(theta) - fr*np.sin(theta)
         fy = ft*np.sin(theta) + fr*np.cos(theta)
 
-        rho = 1 / (100/(self.g/2.0))**0.5  # suppose after 100 m free fall, then air resistance = mg
+        rho = 1 / (125/(self.g/2.0))**0.5  # suppose after 125 m free fall, then air resistance = mg
         ax, ay = fx-rho*vx, fy-self.g-rho*vy
         atheta = ft*self.H/2 / self.I
 
         # update agent
         if self.already_landing:
             vx, vy, ax, ay, theta, vtheta, atheta = 0, 0, 0, 0, 0, 0, 0
+            phi, f = 0, 0
             action = 0
 
         self.step_id += 1
-        x_new, y_new = x + vx*self.dt + 0.5 * ax * (self.dt**2), y + vy*self.dt + 0.5 * ay * (self.dt**2)
+        x_new = x + vx*self.dt + 0.5 * ax * (self.dt**2)
+        y_new = y + vy*self.dt + 0.5 * ay * (self.dt**2)
         vx_new, vy_new = vx + ax * self.dt, vy + ay * self.dt
         theta_new = theta + vtheta*self.dt + 0.5 * atheta * (self.dt**2)
         vtheta_new = vtheta + atheta * self.dt
+        phi = phi + self.dt*vphi
+
+        phi = max(phi, -20/180*3.1415926)
+        phi = min(phi, 20/180*3.1415926)
 
         self.state = {
             'x': x_new, 'y': y_new, 'vx': vx_new, 'vy': vy_new,
             'theta': theta_new, 'vtheta': vtheta_new,
-            't': self.step_id, 'a_': action
+            'phi': phi, 'f': f,
+            't': self.step_id, 'action_': action
         }
         self.state_buffer.append(self.state)
 
@@ -245,7 +266,8 @@ class Rocket(object):
 
     def flatten(self, state):
         x = [state['x'], state['y'], state['vx'], state['vy'],
-             state['theta'], state['vtheta'], state['t']]
+             state['theta'], state['vtheta'], state['t'],
+             state['phi']]
         return np.array(x, dtype=np.float32)/100.
 
     def render(self, window_name='env', wait_time=1,
@@ -382,42 +404,30 @@ class Rocket(object):
                                       'from (falcon, starship)' % self.rocket_type)
 
         # engine work
-        action = self.state['a_']
-        c, s = np.cos(15/180*np.pi), np.sin(15/180*np.pi)
-        if action == 1:  # main engine working
-            pts1 = utils.create_rectangle_poly(center=(0, -H/2-2*dl), w=dl, h=dl)
-            pts2 = utils.create_rectangle_poly(center=(0, -H/2-5*dl), w=1.5*dl, h=1.5*dl)
-            pts3 = utils.create_rectangle_poly(center=(0, -H/2-8*dl), w=2*dl, h=2*dl)
-            pts4 = utils.create_rectangle_poly(center=(0, -H/2-12*dl), w=3*dl, h=3*dl)
-        elif action == 2:  # bottom left engine working
-            pts1 = utils.create_rectangle_poly(center=(-2*dl*s, -H/2-2*dl*c), w=dl, h=dl)
-            pts2 = utils.create_rectangle_poly(center=(-5*dl*s, -H/2-5*dl*c), w=1.5*dl, h=1.5*dl)
-            pts3 = utils.create_rectangle_poly(center=(-8*dl*s, -H/2-8*dl*c), w=2*dl, h=2*dl)
-            pts4 = utils.create_rectangle_poly(center=(-12*dl*s, -H/2-12*dl*c), w=2*dl, h=2*dl)
-        elif action == 3:  # bottom right engine working
+        f, phi = self.state['f'], self.state['phi']
+        c, s = np.cos(phi), np.sin(phi)
+
+        if f > 0 and f < 0.5 * self.g:
+            pts1 = utils.create_rectangle_poly(center=(2 * dl * s, -H / 2 - 2 * dl * c), w=dl, h=dl)
+            pts2 = utils.create_rectangle_poly(center=(5 * dl * s, -H / 2 - 5 * dl * c), w=1.5 * dl, h=1.5 * dl)
+            polys['engine_work'].append({'pts': pts1, 'face_color': (255, 255, 255), 'edge_color': None})
+            polys['engine_work'].append({'pts': pts2, 'face_color': (255, 255, 255), 'edge_color': None})
+        elif f > 0.5 * self.g and f < 1.5 * self.g:
             pts1 = utils.create_rectangle_poly(center=(2 * dl * s, -H / 2 - 2 * dl * c), w=dl, h=dl)
             pts2 = utils.create_rectangle_poly(center=(5 * dl * s, -H / 2 - 5 * dl * c), w=1.5 * dl, h=1.5 * dl)
             pts3 = utils.create_rectangle_poly(center=(8 * dl * s, -H / 2 - 8 * dl * c), w=2 * dl, h=2 * dl)
-            pts4 = utils.create_rectangle_poly(center=(12 * dl * s, -H / 2 - 12 * dl * c), w=2 * dl, h=2 * dl)
-        elif action == 4:  # bottom left engine working
-            pts1 = utils.create_rectangle_poly(center=(-2*dl*s, -H/2-2*dl*c), w=dl, h=dl)
-            pts2 = utils.create_rectangle_poly(center=(-5*dl*s, -H/2-5*dl*c), w=1.5*dl, h=1.5 * dl)
-            pts3 = utils.create_rectangle_poly(center=(-8*dl*s, -H/2-8*dl*c), w=2*dl, h=2*dl)
-        elif action == 5:  # bottom right engine working
-            pts1 = utils.create_rectangle_poly(center=(2*dl*s, -H/2-2*dl*c), w=dl, h=dl)
-            pts2 = utils.create_rectangle_poly(center=(5*dl*s, -H/2-5*dl*c), w=1.5*dl, h=1.5 * dl)
-            pts3 = utils.create_rectangle_poly(center=(8*dl*s, -H/2-8*dl*c), w=2*dl, h=2*dl)
-
-        if action in [1, 2, 3]:
+            polys['engine_work'].append({'pts': pts1, 'face_color': (255, 255, 255), 'edge_color': None})
+            polys['engine_work'].append({'pts': pts2, 'face_color': (255, 255, 255), 'edge_color': None})
+            polys['engine_work'].append({'pts': pts3, 'face_color': (255, 255, 255), 'edge_color': None})
+        elif f > 1.5 * self.g:
+            pts1 = utils.create_rectangle_poly(center=(2 * dl * s, -H / 2 - 2 * dl * c), w=dl, h=dl)
+            pts2 = utils.create_rectangle_poly(center=(5 * dl * s, -H / 2 - 5 * dl * c), w=1.5 * dl, h=1.5 * dl)
+            pts3 = utils.create_rectangle_poly(center=(8 * dl * s, -H / 2 - 8 * dl * c), w=2 * dl, h=2 * dl)
+            pts4 = utils.create_rectangle_poly(center=(12 * dl * s, -H / 2 - 12 * dl * c), w=3 * dl, h=3 * dl)
             polys['engine_work'].append({'pts': pts1, 'face_color': (255, 255, 255), 'edge_color': None})
             polys['engine_work'].append({'pts': pts2, 'face_color': (255, 255, 255), 'edge_color': None})
             polys['engine_work'].append({'pts': pts3, 'face_color': (255, 255, 255), 'edge_color': None})
             polys['engine_work'].append({'pts': pts4, 'face_color': (255, 255, 255), 'edge_color': None})
-        if action in [4, 5]:
-            polys['engine_work'].append({'pts': pts1, 'face_color': (255, 255, 255), 'edge_color': None})
-            polys['engine_work'].append({'pts': pts2, 'face_color': (255, 255, 255), 'edge_color': None})
-            polys['engine_work'].append({'pts': pts3, 'face_color': (255, 255, 255), 'edge_color': None})
-
         # target region
         if self.task == 'hover':
             pts1 = utils.create_rectangle_poly(center=(self.target_x, self.target_y), w=0, h=self.target_r/3.0)

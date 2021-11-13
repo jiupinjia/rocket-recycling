@@ -64,7 +64,8 @@ class MLP(nn.Module):
         h_dim = 128
         self.linear1 = nn.Linear(in_features=self.mapping.output_dim, out_features=h_dim, bias=True)
         self.linear2 = nn.Linear(in_features=h_dim, out_features=h_dim, bias=True)
-        self.linear3 = nn.Linear(in_features=h_dim, out_features=output_dim, bias=True)
+        self.linear3 = nn.Linear(in_features=h_dim, out_features=h_dim, bias=True)
+        self.linear4 = nn.Linear(in_features=h_dim, out_features=output_dim, bias=True)
         self.relu = nn.LeakyReLU(0.2)
 
     def forward(self, x):
@@ -73,7 +74,8 @@ class MLP(nn.Module):
         x = self.mapping(x)
         x = self.relu(self.linear1(x))
         x = self.relu(self.linear2(x))
-        x = self.linear3(x)
+        x = self.relu(self.linear3(x))
+        x = self.linear4(x)
         return x
 
 
@@ -90,7 +92,7 @@ class ActorCritic(nn.Module):
         self.critic = MLP(input_dim=input_dim, output_dim=1)
         self.softmax = nn.Softmax(dim=-1)
 
-        self.optimizer = optim.AdamW(self.parameters(), lr=2e-5)
+        self.optimizer = optim.RMSprop(self.parameters(), lr=5e-5)
 
     def forward(self, x):
         # shape x: batch_size x m_token x m_state
