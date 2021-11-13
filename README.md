@@ -2,38 +2,46 @@
 
 Developed by: [Zhengxia Zou](https://zhengxiazou.github.io/)
 
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/-kiGmCmnSM0/0.jpg)](https://www.youtube.com/watch?v=-kiGmCmnSM0)
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/gsIiniJMr3E/0.jpg)](https://www.youtube.com/watch?v=gsIiniJMr3E)
 
-I have long been fascinated by the recovery process of SpaceX rockets. In this mini-project, I worked on an interesting question that whether we can address this problem with simple reinforcement learning. 
+As a big fan of SpaceX, I always dreamed of having my own rockets. Recently, I worked on an interesting question that whether we can "build" a virtual rocket and address a challenging problem - rocket recycling, with simple reinforcement learning. 
 
-I tried on two tasks: **hovering** and **landing**. The rocket is simplified into a rigid body on a 2D plane with a thin rod, considering the basic cylinder dynamics model and air resistance proportional to the velocity.
+I tried on two tasks: **hovering** and **landing**. The rocket is simplified into a rigid body on a 2D plane. I considered the basic cylinder dynamics model and assumed the air resistance is proportional to the velocity. A thrust-vectoring engine is installed at the bottom of the rocket. This engine provides adjustable thrust values (0.2g, 1.0g, and 2.0g) with different directions. An angular velocity constraint is added to the nozzle with a max-rotating speed of 30 degrees/second.
 
-Their reward functions are quite straightforward.
+With the above basic settings, the action space is defined as a collection of the discrete control signals of the engine, including the thrust acceleration and the angular velocity of the nozzle. The state-space consists of the rocket position, speed, angle, angle velocity, nozzle angle, and the simulation time.
+
+![](./gallery/config.png)
+
+
+
+For the landing task, I followed the basic parameters of the Starship SN10 belly flop maneuver. The initial speed is set to -50m/s. The rocket orientation is set to 90 degrees (horizontally). The landing burn height is set to 500 meters above the ground. 
+
+![](./gallery/timelapse.jpg)
+
+Image credit https://twitter.com/thejackbeyer/status/1367364251233497095
+
+
+
+The reward functions are quite straightforward.
 
 1. For the hovering tasks: the step-reward is given based on two factors:
-   1) the distance between the rocket and the predefined target point - the closer they are, the larger reward will be assigned.
-   2) the angle of the rocket body (the rocket should stay as upright as possible)
+   The distance between the rocket and the predefined target point - the closer they are, the larger reward will be assigned.
+   The angle of the rocket body (the rocket should stay as upright as possible)
 
 1. For the landing task: the step-reward is given based on three factors:
-   1) and 2) are the same as the hovering task
-   3) Speed and angle at the moment of contact with the ground - when the touching-speed
-   are smaller than a safe threshold and the angle is close to 90 degrees (upright), we see it as a successful landing and a big reward will be assigned. 
-
-A thrust-vectoring engine is installed at the bottom of the rocket. This engine provides different thrust values (0, 0.5g, and 1.5g) with three different angles (-15, 0, and +15 degrees). 
-
-![](./gallery/config.jpg)
-
-The action space is defined as a collection of the discrete control signals of the engine. The state-space consists of the rocket position (x, y), speed (vx, vy), angle (a), angle speed (va), and the simulation time steps (t).
+   The first two are the same as the hovering task
+   Speed and angle at the moment of contact with the ground - when the touching-speed
+   are smaller than a safe threshold and the angle is close to 0 degrees (upright), we see it as a successful landing and a big reward will be assigned. 
 
 
 
-I implement the above environment and train a policy-based agent (actor-critic) on solving this problem. The episode reward finally converges very well after over 40000 training episodes.
+I implement the above environment and train a policy-based agent (actor-critic) to solve this problem. The episode reward finally converges very well after over 20000 training episodes.
 
 ![](./gallery/rst.gif)
 
-![](./gallery/rewards_00051401.jpg)
+![](./gallery/rewards_00022301.jpg)
 
-Despite the simple setting of the environment and the reward, the agent successfully learned the starship classic belly flop maneuver, which makes me quite surprising.  The following animation shows a comparison between the real SN10 and a fake one learned from reinforcement learning.
+Despite the simple setting of the environment and the reward, the agent has learned the belly flop maneuver nicely. The following animation shows a comparison between the real SN10 and a fake one learned from reinforcement learning.
 
 ![](./gallery/belly_flop.gif)
 
