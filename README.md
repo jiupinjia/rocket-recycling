@@ -1,8 +1,17 @@
 # Rocket-recycling with Reinforcement Learning
 
-Developed by: [Zhengxia Zou](https://zhengxiazou.github.io/)
+Developed by: [Zhengxia Zou, Ph.D.](https://zhengxiazou.github.io/)
+
+
+
+
+## One-min demo video
 
 [![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/gsIiniJMr3E/0.jpg)](https://www.youtube.com/watch?v=gsIiniJMr3E)
+
+
+
+## About this project
 
 As a big fan of SpaceX, I always dreamed of having my own rockets. Recently, I worked on an interesting question that whether we can "build" a virtual rocket and address a challenging problem - rocket recycling, with simple reinforcement learning. 
 
@@ -24,31 +33,35 @@ Image credit https://twitter.com/thejackbeyer/status/1367364251233497095
 
 The reward functions are quite straightforward.
 
-1. For the hovering tasks: the step-reward is given based on two factors:
-   The distance between the rocket and the predefined target point - the closer they are, the larger reward will be assigned.
-   The angle of the rocket body (the rocket should stay as upright as possible)
+For the hovering tasks: the step-reward is given based on two rules: 1) The distance between the rocket and the predefined target point - the closer they are, the larger reward will be assigned. 2) The angle of the rocket body (the rocket should stay as upright as possible)
 
-1. For the landing task: the step-reward is given based on three factors:
-   The first two are the same as the hovering task
-   Speed and angle at the moment of contact with the ground - when the touching-speed
-   are smaller than a safe threshold and the angle is close to 0 degrees (upright), we see it as a successful landing and a big reward will be assigned. 
-
+For the landing task: we look at the Speed and angle at the moment of contact with the ground - when the touching-speed are smaller than a safe threshold and the angle is close to 0 degrees (upright), we see it as a successful landing and a big reward will be assigned. The rest of the rules are the same as the hovering task.
 
 
 I implement the above environment and train a policy-based agent (actor-critic) to solve this problem. The episode reward finally converges very well after over 20000 training episodes.
 
-![](./gallery/rst.gif)
+| Fully trained agent (task: hovering) |        Reward over number of episodes        |
+| :----------------------------------: | :------------------------------------------: |
+|       ![](./gallery/h_20k.gif)       | ![](./gallery/hovering_rewards_00022301.jpg) |
 
-![](./gallery/rewards_00022301.jpg)
+
+| Fully trained agent (task: landing) |        Reward over number of episodes        |
+| :----------------------------------: | :------------------------------------------: |
+|       ![](./gallery/l_11k.gif)       | ![](./gallery/landing_rewards_00011201.jpg) |
+
 
 Despite the simple setting of the environment and the reward, the agent has learned the belly flop maneuver nicely. The following animation shows a comparison between the real SN10 and a fake one learned from reinforcement learning.
 
 ![](./gallery/belly_flop.gif)
 
 
+
+
 ## Requirements
 
 See [Requirements.txt](Requirements.txt).
+
+
 
 ## Usage
 
@@ -87,9 +100,13 @@ if __name__ == '__main__':
             break
 ```
 
+
+
 ## License
 
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><span xmlns:dct="http://purl.org/dc/terms/" property="dct:title">  Rocket-recycling</span> by <a xmlns:cc="http://creativecommons.org/ns#" href="http://www-personal.umich.edu/~zzhengxi/">Zhengxia Zou</a> is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License</a>.
+
+
 
 ## Citation
 
