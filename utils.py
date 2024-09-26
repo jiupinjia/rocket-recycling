@@ -79,7 +79,7 @@ def rotation_matrix(rx=0., ry=0., rz=0.):
     Rz[1, 1] = np.cos(rz)
 
     # RZ * RY * RX
-    RotationMatrix = np.mat(Rz) * np.mat(Ry) * np.mat(Rx)
+    RotationMatrix = np.asmatrix(Rz) * np.asmatrix(Ry) * np.asmatrix(Rx)
 
     return np.array(RotationMatrix)
 
@@ -108,11 +108,11 @@ def create_pose_matrix(tx=0., ty=0., tz=0.,
     # Translation matrix
     TranslationMatrix = translation_matrix(tx, ty, tz)
 
-    # TranslationMatrix * RotationMatrix * ScaleMatrix
-    PoseMatrix = np.mat(TranslationMatrix) \
-                 * np.mat(RotationMatrix) \
-                 * np.mat(ScaleMatrix) \
-                 * np.mat(base_correction)
+   # TranslationMatrix * RotationMatrix * ScaleMatrix
+    PoseMatrix = np.asmatrix(TranslationMatrix) \
+                 * np.asmatrix(RotationMatrix) \
+                 * np.asmatrix(ScaleMatrix) \
+                 * np.asmatrix(base_correction)
 
     return np.array(PoseMatrix)
 
