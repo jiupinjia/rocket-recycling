@@ -9,7 +9,7 @@ class Rocket(object):
     Rocekt and environment.
     The rocket is simplified into a rigid body model with a thin rod,
     considering acceleration and angular acceleration and air resistance
-    proportional to velocity.
+    using quadratic drag by default (linear drag remains available for old models).
 
     There are two tasks: hover and landing
     Their reward functions are straight forward and simple.
@@ -28,8 +28,22 @@ class Rocket(object):
     """
 
     def __init__(self, max_steps, task='hover', rocket_type='falcon',
-                 viewport_h=768, path_to_bg_img=None):
+                 viewport_h=768, path_to_bg_img=None, render_enabled=True, landing_reward="legacy",
+                 drag_model="quadratic", drag_coefficient=.004, hover_reward="legacy"):
 
+        if landing_reward not in ("legacy", "shaped_v1"):
+            raise ValueError("Unknown landing reward: " + landing_reward)
+        if drag_model not in ("linear", "quadratic"):
+            raise ValueError("Unknown drag model: " + drag_model)
+        if not np.isfinite(drag_coefficient) or drag_coefficient < 0:
+            raise ValueError("drag_coefficient must be finite and nonnegative")
+        if hover_reward not in ("legacy", "shaped_v1"):
+            raise ValueError("Unknown hover reward: " + hover_reward)
+        self.drag_model = drag_model
+        self.drag_coefficient = drag_coefficient
+        self.hover_reward = hover_reward
+        self.landing_reward = landing_reward
+        self.render_enabled = render_enabled
         self.task = task
         self.rocket_type = rocket_type
 
@@ -60,6 +74,7 @@ class Rocket(object):
         self.step_id = 0
 
         self.state = self.create_random_state()
+        self.previous_state = self.state
         self.action_table = self.create_action_table()
 
         self.state_dims = 8
@@ -67,7 +82,8 @@ class Rocket(object):
 
         if path_to_bg_img is None:
             path_to_bg_img = task+'.jpg'
-        self.bg_img = utils.load_bg_img(path_to_bg_img, w=self.viewport_w, h=self.viewport_h)
+        self.bg_img = (utils.load_bg_img(path_to_bg_img, w=self.viewport_w, h=self.viewport_h)
+                       if render_enabled else None)
 
         self.state_buffer = []
 
@@ -79,10 +95,13 @@ class Rocket(object):
         else:
             self.state = state_dict
 
+        self.previous_state = self.state
         self.state_buffer = []
         self.step_id = 0
         self.already_landing = False
-        cv2.destroyAllWindows()
+        self.already_crash = False
+        if self.render_enabled:
+            cv2.destroyAllWindows()
         return self.flatten(self.state)
 
     def create_action_table(self):
@@ -177,7 +196,75 @@ class Rocket(object):
             return True if y <= 0 + self.H / 2.0 and v < 15.0 and abs(x) < self.target_r \
                            and abs(theta) < 10/180*np.pi and abs(vtheta) < 10/180*np.pi else False
 
+    def drag_acceleration(self, vx, vy):
+        # F_drag / mass = -k * |v| * v, k = rho_air * Cd * A / (2 * mass).
+        # k=.004 m^-1 gives terminal speed sqrt(g/k)=49.50 m/s.
+        # No wind: velocity here is relative to stationary air.
+        if self.drag_model == 'linear':
+            factor = (self.g / 250.) ** .5  # old coefficient, units s^-1
+        else:
+            factor = self.drag_coefficient * np.hypot(vx, vy)
+        return -factor * vx, -factor * vy
+
+    def is_stable_hover(self, state):
+        return (np.hypot(state['x'] - self.target_x, state['y'] - self.target_y) < 50.
+                and np.hypot(state['vx'], state['vy']) < 5.
+                and abs(state['theta']) < np.pi / 18)
+
+    def shaped_hover_reward(self, state):
+        dx, dy = state['x'] - self.target_x, state['y'] - self.target_y
+        desired_vx = np.clip(-.1 * dx, -15., 15.)
+        desired_vy = np.clip(-.1 * dy, -20., 20.)
+        tracking = np.hypot(state['vx'] - desired_vx, state['vy'] - desired_vy)
+        distance = np.hypot(dx, dy)
+        if distance <= 50.:
+            base = .5
+        elif distance <= 100.:
+            base = .25
+        else:
+            base = .1 * (1. - (abs(dx) + abs(dy)) / 600.) + .1
+        reward = (base + .1 * np.exp(-(dx*dx + dy*dy) / 1250.)
+                  - .01 * tracking - .02 * abs(state['theta']) - .01 * abs(state['vtheta']))
+        return reward - 10. if self.already_crash else reward
+
+
+    def landing_potential(self, state):
+        height = max(0., state['y'] - self.H / 2)
+        desired_vy = -min(35., (4. * height) ** .5 + 2.)
+        desired_vx = np.clip(-.2 * state['x'], -10., 10.)
+        # A descending speed envelope: brake progressively as the ground approaches.
+        return -(height / 300. + abs(state['x']) / 100.
+                 + abs(state['vx'] - desired_vx) / 20.
+                 + abs(state['vy'] - desired_vy) / 20.
+                 + abs(state['theta']) + .5 * abs(state['vtheta']))
+
+    def shaped_landing_reward(self, state):
+        progress = 2. * (self.landing_potential(state) - self.landing_potential(self.previous_state))
+        height = max(0., state['y'] - self.H / 2)
+        desired_vy = -min(35., (4. * height) ** .5 + 2.)
+        desired_vx = np.clip(-.2 * state['x'], -10., 10.)
+        tracking_cost = (abs(state['vy'] - desired_vy) / 10.
+                         + abs(state['vx'] - desired_vx) / 10.
+                         + 2. * abs(state['theta']) + .3 * abs(state['vtheta']))
+        reward = progress - .005 - .02 * tracking_cost
+        if self.already_landing:
+            return reward + 30.
+        if self.already_crash:
+            speed = np.hypot(state['vx'], state['vy'])
+            severity = (min(speed / 15., 3.) + min(abs(state['x']) / 50., 3.)
+                        + min(abs(state['theta']) / (np.pi / 18), 3.)
+                        + min(abs(state['vtheta']) / (np.pi / 18), 3.))
+            return min(-1., reward - 5. - 2. * severity)
+        if self.step_id >= self.max_steps:
+            return reward - 20.
+        return reward
+
     def calculate_reward(self, state):
+        if self.task == 'hover' and self.hover_reward == 'shaped_v1':
+            return self.shaped_hover_reward(state)
+        if self.task == 'landing' and self.landing_reward == 'shaped_v1':
+            return self.shaped_landing_reward(state)
+
 
         x_range = self.world_x_max - self.world_x_min
         y_range = self.world_y_max - self.world_y_min
@@ -214,6 +301,8 @@ class Rocket(object):
 
     def step(self, action):
 
+        self.previous_state = self.state
+
         x, y, vx, vy = self.state['x'], self.state['y'], self.state['vx'], self.state['vy']
         theta, vtheta = self.state['theta'], self.state['vtheta']
         phi = self.state['phi']
@@ -224,8 +313,8 @@ class Rocket(object):
         fx = ft*np.cos(theta) - fr*np.sin(theta)
         fy = ft*np.sin(theta) + fr*np.cos(theta)
 
-        rho = 1 / (125/(self.g/2.0))**0.5  # suppose after 125 m free fall, then air resistance = mg
-        ax, ay = fx-rho*vx, fy-self.g-rho*vy
+        drag_x, drag_y = self.drag_acceleration(vx, vy)
+        ax, ay = fx + drag_x, fy - self.g + drag_y
         atheta = ft*self.H/2 / self.I
 
         # update agent
@@ -251,7 +340,8 @@ class Rocket(object):
             'phi': phi, 'f': f,
             't': self.step_id, 'action_': action
         }
-        self.state_buffer.append(self.state)
+        if self.render_enabled:
+            self.state_buffer.append(self.state)
 
         self.already_landing = self.check_landing_success(self.state)
         self.already_crash = self.check_crash(self.state)

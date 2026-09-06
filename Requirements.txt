@@ -1,4 +1,4 @@
-numpy
-torch
-torchvision
-opencv-python
+numpy>=1.24,<2
+torch>=2.6,<3
+matplotlib>=3.7,<4
+opencv-python>=4.8,<4.12

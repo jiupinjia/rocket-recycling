@@ -122,3 +122,10 @@ TTT*
 rewards.jpg
 hover_ckpt
 landing_ckpt
+
+# Local training outputs and desktop metadata
+.DS_Store
+*_ckpt/
+
+# README figures are versioned assets
+!gallery/*.png

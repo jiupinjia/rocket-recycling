@@ -1,75 +1,154 @@
+import os
+import random
+import time
+from pathlib import Path
+
 import numpy as np
 import torch
-from rocket import Rocket
-from policy import ActorCritic
 import matplotlib.pyplot as plt
-import utils
-import os
-import glob
 
-# Decide which device we want to run on
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+from ppo import PPOActorCritic, PPOCollector, update_ppo
+from training_visuals import RewardPlot, preview
+
 
 if __name__ == '__main__':
 
+    # Edit these settings directly, then Run in PyCharm.
     task = 'hover'  # 'hover' or 'landing'
-
-    max_m_episode = 800000
+    max_m_episode = 800000  # total completed episodes, including resumed progress
     max_steps = 800
+    num_envs = 32
+    rollout_steps = 128
+    seed = 0  # reproducible fresh training
+    landing_reward = "shaped_v1"  # "legacy" for the original reward
+    hover_reward = "legacy"  # fastest acquisition in 3-seed tests; shaped_v1 favors precision
+    drag_model = "quadratic"
+    drag_coefficient = 0.004  # m^-1; terminal speed ~49.5 m/s
+    gamma = 0.99
+    gae_lambda = 0.95
+    learning_rate = 3e-4
+    ppo_epochs = 4
+    minibatch_size = 256
+    entropy_coef = 0.01
 
-    env = Rocket(task=task, max_steps=max_steps)
-    ckpt_folder = os.path.join('./', task + '_ckpt')
-    if not os.path.exists(ckpt_folder):
-        os.mkdir(ckpt_folder)
+    show_curve = True
+    plot_every = 10       # refresh the reward curve every 10 updates
+    render_every = 1000   # preview one episode every 1000 completed training episodes; 0 disables
+    save_every = 1000     # save curve and model every 1000 completed episodes
+    resume = True
 
-    last_episode_id = 0
+    os.chdir(Path(__file__).resolve().parent)
+    torch.set_num_threads(1)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    environment = {'drag_model': drag_model, 'drag_coefficient': drag_coefficient,
+                   'landing_reward': landing_reward, 'hover_reward': hover_reward}
+    ckpt_folder = Path(task + '_ppo_quadratic_v1_ckpt')
+    ckpt_folder.mkdir(exist_ok=True)
+    ckpt_path = ckpt_folder / 'ppo_latest.pt'
+
+    last_episode_id = -1
+    update_id = 0
+    total_steps = 0
     REWARDS = []
+    SUCCESSES = []
+    reward_episode_start = 0
+    net = PPOActorCritic(task=task, learning_rate=learning_rate)
 
-    net = ActorCritic(input_dim=env.state_dims, output_dim=env.action_dims).to(device)
-    if len(glob.glob(os.path.join(ckpt_folder, '*.pt'))) > 0:
-        # load the last ckpt
-        checkpoint = torch.load(glob.glob(os.path.join(ckpt_folder, '*.pt'))[-1])
+    # PPO uses its own state encoding and checkpoint; old A2C files stay intact.
+    source = ckpt_path
+    if resume and source.exists():
+        checkpoint = torch.load(source, map_location='cpu', weights_only=False)
+        if checkpoint.get('algorithm') != 'ppo':
+            raise ValueError('Expected a PPO checkpoint')
+        if checkpoint.get('task', task) != task:
+            raise ValueError('Checkpoint task does not match task')
+        if checkpoint.get('environment') != environment:
+            raise ValueError('Checkpoint physics/reward differs; use a new checkpoint folder')
+        if task == 'landing' and checkpoint.get('landing_reward', 'legacy') != landing_reward:
+            raise ValueError('Checkpoint reward version does not match landing_reward')
         net.load_state_dict(checkpoint['model_G_state_dict'])
         last_episode_id = checkpoint['episode_id']
-        REWARDS = checkpoint['REWARDS']
+        REWARDS = list(checkpoint.get('REWARDS', []))
+        SUCCESSES = list(checkpoint.get('SUCCESSES', []))
+        reward_episode_start = checkpoint.get('reward_episode_start', last_episode_id + 1 - len(REWARDS))
+        if checkpoint.get('format_version') == 3:
+            net.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            update_id = checkpoint.get('updates', 0)
+            total_steps = checkpoint.get('steps', 0)
+        for group in net.optimizer.param_groups:
+            group['lr'] = learning_rate
+        print('loaded:', source, 'completed episodes:', last_episode_id + 1)
 
-    for episode_id in range(last_episode_id, max_m_episode):
+    # Headless training environments; preview uses a separate environment.
+    collector = PPOCollector(task, num_envs, max_steps, **environment)
+    episode_base = last_episode_id + 1
+    steps_base = total_steps
+    completed_episodes = episode_base
+    plot = RewardPlot(task, show=show_curve)
+    plot.update(REWARDS, reward_episode_start)
+    next_render = completed_episodes + 1  # first preview soon after starting/resuming
+    next_save = (completed_episodes // save_every + 1) * save_every
+    started = time.perf_counter()
 
-        # training loop
-        state = env.reset()
-        rewards, log_probs, values, masks = [], [], [], []
-        for step_id in range(max_steps):
-            action, log_prob, value = net.get_action(state)
-            state, reward, done, _ = env.step(action)
-            rewards.append(reward)
-            log_probs.append(log_prob)
-            values.append(value)
-            masks.append(1-done)
-            if episode_id % 100 == 1:
-                env.render()
+    def save_progress():
+        temporary = ckpt_path.with_suffix('.tmp')
+        torch.save({'format_version': 3, 'algorithm': 'ppo', 'task': task, 'landing_reward': landing_reward,
+                    'environment': environment,
+                    'hyperparameters': {'seed': seed, 'gamma': gamma, 'gae_lambda': gae_lambda,
+                                        'learning_rate': learning_rate, 'ppo_epochs': ppo_epochs,
+                                        'minibatch_size': minibatch_size, 'entropy_coef': entropy_coef},
+                    'episode_id': completed_episodes - 1,
+                    'updates': update_id, 'steps': steps_base + collector.steps,
+                    'REWARDS': REWARDS, 'SUCCESSES': SUCCESSES, 'reward_episode_start': reward_episode_start,
+                    'model_G_state_dict': net.state_dict(),
+                    'optimizer_state_dict': net.optimizer.state_dict()}, temporary)
+        temporary.replace(ckpt_path)
+        plot.update(REWARDS, reward_episode_start)
+        plot.save(ckpt_folder / 'rewards_latest.jpg')
 
-            if done or step_id == max_steps-1:
-                _, _, Qval = net.get_action(state)
-                net.update_ac(net, rewards, log_probs, values, masks, Qval, gamma=0.999)
-                break
+    try:
+        while completed_episodes < max_m_episode:
+            # Collect on-policy data, then reuse it with clipped PPO updates.
+            batch = collector.collect(net, rollout_steps, gamma, gae_lambda)
+            actor_loss, critic_loss = update_ppo(net, batch, epochs=ppo_epochs,
+                                                minibatch_size=minibatch_size, entropy_coef=entropy_coef)
+            rewards = batch[-1]
+            REWARDS.extend(rewards)
+            SUCCESSES.extend(collector.finished_successes)
+            update_id += 1
+            completed_episodes = episode_base + collector.completed
 
-        REWARDS.append(np.sum(rewards))
-        print('episode id: %d, episode reward: %.3f'
-              % (episode_id, np.sum(rewards)))
+            if rewards:
+                print('episode id: %d, mean reward: %.3f, steps/s: %.0f'
+                      % (completed_episodes - 1, np.mean(rewards),
+                         collector.steps / (time.perf_counter() - started)), flush=True)
 
-        if episode_id % 100 == 1:
-            plt.figure()
-            plt.plot(REWARDS), plt.plot(utils.moving_avg(REWARDS, N=50))
-            plt.legend(['episode reward', 'moving avg'], loc=2)
-            plt.xlabel('m episode')
-            plt.ylabel('reward')
-            plt.savefig(os.path.join(ckpt_folder, 'rewards_' + str(episode_id).zfill(8) + '.jpg'))
-            plt.close()
+            if rewards:
+                print('%s success (last %d): %.1f%%' %
+                      (task, min(100, len(SUCCESSES)), 100 * np.mean(SUCCESSES[-100:])), flush=True)
 
-            torch.save({'episode_id': episode_id,
-                        'REWARDS': REWARDS,
-                        'model_G_state_dict': net.state_dict()},
-                       os.path.join(ckpt_folder, 'ckpt_' + str(episode_id).zfill(8) + '.pt'))
+            if update_id % plot_every == 0:
+                plot.update(REWARDS, reward_episode_start)
+            else:
+                plot.pump()  # keep the curve window responsive between refreshes
 
+            if completed_episodes >= next_save:
+                save_progress()
+                next_save = (completed_episodes // save_every + 1) * save_every
 
+            if render_every > 0 and completed_episodes >= next_render:
+                plot.update(REWARDS, reward_episode_start)
+                preview_reward = preview(net, task, max_steps, plot, **environment)
+                print('preview reward: %.3f' % preview_reward, flush=True)
+                next_render = (completed_episodes // render_every + 1) * render_every
 
+    except KeyboardInterrupt:
+        print('Stopped; saving model and reward curve.', flush=True)
+
+    # Runs after normal completion or Ctrl+C, not after an unexpected training error.
+    save_progress()
+    if show_curve:
+        plt.ioff()
+        plt.show()  # leave the final curve available after training stops

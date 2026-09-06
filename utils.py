@@ -3,18 +3,6 @@ import cv2
 
 ################ Some helper functions... ####################
 
-def moving_avg(x, N=500):
-
-    if len(x) <= N:
-        return []
-
-    x_pad_left = x[0:N]
-    x_pad_right = x[-N:]
-    x_pad = x_pad_left[::-1] + x + x_pad_right[::-1]
-    y = np.convolve(x_pad, np.ones(N) / N, mode='same')
-    return y[N:-N]
-
-
 def load_bg_img(path_to_img, w, h):
     bg_img = cv2.imread(path_to_img, cv2.IMREAD_COLOR)
     bg_img = cv2.cvtColor(bg_img, cv2.COLOR_BGR2RGB)

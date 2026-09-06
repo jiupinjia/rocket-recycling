@@ -1,29 +1,40 @@
-import torch
-from rocket import Rocket
-from policy import ActorCritic
+from pathlib import Path
 import os
-import glob
 
-# Decide which device we want to run on
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+import cv2
+import torch
+
+from ppo import PPOActorCritic
+from rocket import Rocket
+
 
 if __name__ == '__main__':
 
-    task = 'hover'  # 'hover' or 'landing'
+    task = 'landing'  # 'hover' or 'landing'; match the training task
     max_steps = 800
-    ckpt_dir = glob.glob(os.path.join(task+'_ckpt', '*.pt'))[-1]  # last ckpt
+    wait_time = 25  # two rendered frames per step: approximately real time
+    ckpt_path = Path(task + '_ppo_quadratic_v1_ckpt') / 'ppo_latest.pt'
 
-    env = Rocket(task=task, max_steps=max_steps)
-    net = ActorCritic(input_dim=env.state_dims, output_dim=env.action_dims).to(device)
-    if os.path.exists(ckpt_dir):
-        checkpoint = torch.load(ckpt_dir)
-        net.load_state_dict(checkpoint['model_G_state_dict'])
+    os.chdir(Path(__file__).resolve().parent)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if checkpoint.get('algorithm') != 'ppo' or checkpoint.get('task') != task:
+        raise ValueError('Checkpoint algorithm/task does not match this inference configuration')
 
-    state = env.reset()
-    for step_id in range(max_steps):
-        action, log_prob, value = net.get_action(state)
-        state, reward, done, _ = env.step(action)
-        env.render(window_name='test')
-        if env.already_crash:
-            break
+    env = Rocket(task=task, max_steps=max_steps, **checkpoint['environment'])
+    net = PPOActorCritic(task).to(device)
+    net.load_state_dict(checkpoint['model_G_state_dict'])
+    net.eval()
 
+    try:
+        state = env.reset()
+        with torch.no_grad():
+            for step_id in range(max_steps):
+                action, _, _ = net.get_action(state)
+                state, reward, done, _ = env.step(action)
+                env.render(window_name='Rocket recycling - inference', wait_time=wait_time)
+                if done:
+                    break
+        cv2.waitKey(1000)
+    finally:
+        cv2.destroyAllWindows()
